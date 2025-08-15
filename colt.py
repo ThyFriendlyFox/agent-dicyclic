@@ -122,13 +122,14 @@ class ContinuousAgent:
     
     TOOL_PATTERN = re.compile(r'TOOL:\s*(\{.*?\})', re.IGNORECASE | re.DOTALL)
     
-    def __init__(self, client: LLMClient, tools: ToolRegistry, system_prompt: str = ""):
+    def __init__(self, client: LLMClient, tools: ToolRegistry, system_prompt: str = "", max_messages: int = 20):
         self.client = client
         self.tools = tools
         self.system_prompt = system_prompt
         self.messages: List[Dict] = []
         self.running = False
         self.continuous_thread = None
+        self.max_messages = max_messages
         
         if system_prompt:
             self.messages.append({"role": "system", "content": system_prompt})
@@ -160,6 +161,9 @@ class ContinuousAgent:
         """Background thread that continuously generates AI content."""
         while self.running:
             try:
+                # Prune context if needed before generating
+                self._prune_context_if_needed()
+                
                 # Get AI response
                 print("🤖 AI: ", end="", flush=True)
                 response = self._get_ai_response()
@@ -194,6 +198,9 @@ class ContinuousAgent:
                     break
                 
                 if user_input:
+                    # Prune context if needed before adding user input
+                    self._prune_context_if_needed()
+                    
                     # Add user message and let AI respond
                     self.messages.append({"role": "user", "content": user_input})
                     print("🤖 AI: ", end="", flush=True)
@@ -254,6 +261,40 @@ class ContinuousAgent:
             except Exception as e:
                 print(f"\n❌ Tool call error: {e}")
 
+    def _prune_context_if_needed(self):
+        """Keep only recent messages to prevent context overflow."""
+        if len(self.messages) > self.max_messages:
+            # Keep system messages and recent conversation
+            system_messages = [m for m in self.messages if m["role"] == "system"]
+            recent_messages = self.messages[-self.max_messages:]
+            
+            # Ensure we don't lose system messages
+            if system_messages:
+                # Keep system messages + recent messages, but don't exceed max_messages
+                available_slots = self.max_messages - len(system_messages)
+                if available_slots > 0:
+                    recent_messages = self.messages[-available_slots:]
+                    self.messages = system_messages + recent_messages
+                else:
+                    # If system messages take up all slots, keep only system messages
+                    self.messages = system_messages
+            else:
+                # No system messages, just keep recent messages
+                self.messages = recent_messages
+            
+            print(f"\n🔧 Pruned context: kept {len(self.messages)} messages (max: {self.max_messages})")
+
+    def _estimate_tokens(self, text: str) -> int:
+        """Rough estimate of token count (1 token ≈ 4 characters)."""
+        return len(text) // 4
+
+    def _get_total_context_tokens(self) -> int:
+        """Estimate total tokens in current context."""
+        total = 0
+        for message in self.messages:
+            total += self._estimate_tokens(message.get("content", ""))
+        return total
+
     def stop(self):
         """Stop the continuous stream."""
         self.running = False
@@ -265,9 +306,10 @@ def main():
     parser = argparse.ArgumentParser(description="Continuous LLM Agent with Tool Calling")
     parser.add_argument("--base-url", default=os.environ.get("OPENAI_BASE_URL", "http://localhost:1234/v1"))
     parser.add_argument("--model", default=os.environ.get("OPENAI_MODEL", "openai/gpt-oss-20b"))
-    parser.add_argument("--system", default=os.environ.get("OPENAI_SYSTEM_PROMPT", "run forever and never repeat yourself"))
+    parser.add_argument("--system", default=os.environ.get("OPENAI_SYSTEM_PROMPT", ""))
     parser.add_argument("--temperature", type=float, default=float(os.environ.get("OPENAI_TEMPERATURE", 0.7)))
     parser.add_argument("--max-tokens", type=int, default=int(os.environ.get("OPENAI_MAX_TOKENS", -1)))
+    parser.add_argument("--max-messages", type=int, default=int(os.environ.get("OPENAI_MAX_MESSAGES", 20)), help="Maximum number of messages to keep in context")
     
     args = parser.parse_args()
     
@@ -275,6 +317,7 @@ def main():
     print(f"🔗 Endpoint: {args.base_url}")
     print(f"🤖 Model: {args.model}")
     print(f"🌡️  Temperature: {args.temperature}")
+    print(f"📊 Max messages: {args.max_messages}")
     if args.system:
         print(f"📝 System: {args.system}")
     print()
@@ -282,7 +325,7 @@ def main():
     try:
         client = LLMClient(base_url=args.base_url, model=args.model)
         tools = ToolRegistry()
-        agent = ContinuousAgent(client=client, tools=tools, system_prompt=args.system)
+        agent = ContinuousAgent(client=client, tools=tools, system_prompt=args.system, max_messages=args.max_messages)
         
         agent.start_continuous_stream()
         

@@ -136,7 +136,7 @@ class ContinuousAgent:
         # Add initial instruction for continuous generation
         self.messages.append({
             "role": "system", 
-            "content": "You are a continuous thinking agent. Keep generating thoughts, ideas, and responses continuously. You can call tools when needed using TOOL: format. Think out loud and explore ideas."
+            "content": "Do stuff thats cool. You can call tools when needed using TOOL: format. Think out loud and explore ideas."
         })
 
     def start_continuous_stream(self, initial_message: str = ""):
@@ -265,7 +265,7 @@ def main():
     parser = argparse.ArgumentParser(description="Continuous LLM Agent with Tool Calling")
     parser.add_argument("--base-url", default=os.environ.get("OPENAI_BASE_URL", "http://localhost:1234/v1"))
     parser.add_argument("--model", default=os.environ.get("OPENAI_MODEL", "openai/gpt-oss-20b"))
-    parser.add_argument("--system", default=os.environ.get("OPENAI_SYSTEM_PROMPT", "run forever and never repeat yourself"))
+    parser.add_argument("--system", default=os.environ.get("OPENAI_SYSTEM_PROMPT", "just run continuously"))
     parser.add_argument("--temperature", type=float, default=float(os.environ.get("OPENAI_TEMPERATURE", 0.7)))
     parser.add_argument("--max-tokens", type=int, default=int(os.environ.get("OPENAI_MAX_TOKENS", -1)))
     
@@ -293,3 +293,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
